@@ -410,6 +410,8 @@ void StateRecorder_Save(uint8* slot_addr) {
   writeSaveStateImpl(&savestateSize, sizeof(size_t));
   SaveFuncState savest = { {&saveFunc} };
   SaveSnesState(&savest.base);
+  unsigned int crc = writeSaveStateCalculateCRC(savestateSize);
+  writeSaveStateImpl(&crc, sizeof(crc));
   writeSaveStateFinalizeImpl();
 }
 
@@ -533,7 +535,22 @@ void RtlSaveLoad(int cmd, uint8* slot) {
       printf("Failed fopen: %s\n", name);
       return;
     }*/
-    RtlLoadFromFile(/*f, cmd == kSaveLoad_Replay*/slot);
+    size_t dataSize;
+    dataSize = InternalSaveLoadSize();
+
+    // Calculate CRC for the data in 'slot', excluding the first 'sizeof(size_t)' bytes
+    unsigned int calculatedCRC = crc32_le(0, slot + sizeof(size_t), dataSize);
+
+    // Extract CRC from the end of 'slot'
+    unsigned int storedCRC;
+    memcpy(&storedCRC, slot + dataSize + sizeof(size_t), sizeof(unsigned int));
+
+    if (calculatedCRC == storedCRC) {
+      RtlLoadFromFile(/*f, cmd == kSaveLoad_Replay*/slot);
+    }
+    else {
+      printf("Config: CRC32 mismatch. Expected 0x%08lx, got 0x%08lx\n", storedCRC, calculatedCRC);
+    }
     //fclose(f);
   } else {
     RtlSaveSnapshot(/*name, false*/slot);
